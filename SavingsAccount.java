@@ -1,29 +1,33 @@
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
 public class SavingsAccount extends Account {
 
-    private double interestRate = 0.03; // 3% interest
+    private BigDecimal interestRate = new BigDecimal("0.03"); // 3% interest
 
-    public SavingsAccount(int accountId, double balance) {
-        super(accountId, balance);
+    public SavingsAccount(int accountId, int ownerId, BigDecimal balance) {
+        super(accountId, ownerId, balance);
     }
 
     @Override
-    public void withdraw(double amount) {
-        if (amount <= 0) return; // cannot be negative in a savings account
+    public void withdraw(BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) return; // cannot be negative in a savings account
 
-        if (amount > balance) {
+        if (amount.compareTo(balance) > 0) {
             System.out.println("Cannot withdraw from savings: insufficient funds.");
         } else {
-            balance -= amount;
+            balance = balance.subtract(amount).setScale(2, RoundingMode.HALF_EVEN);
         }
     }
 
     public void applyInterest() {
-        balance += balance * interestRate;
+        balance = balance.add(balance.multiply(interestRate)).setScale(2, RoundingMode.HALF_EVEN);
     }
 
     @Override
     public String toString() {
         return "SavingsAccount{id=" + accountId +
+               ", ownerId=" + ownerId +
                ", balance=" + balance +
                ", interestRate=" + interestRate + "}";
     }
