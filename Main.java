@@ -136,7 +136,7 @@ class Theme {
 }
 
 
-// keeps users and accounts in memory until the database is ready
+// keeps users and accounts in temp. memory until the database is ready
 class GuiState {
 
     private Map<String, User> usersByName = new HashMap<String, User>();
