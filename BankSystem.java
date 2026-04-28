@@ -107,6 +107,32 @@ public class BankSystem {
         return account.withdraw(amount);
     }
 
+    // db-backed deposit, returns the new balance or null on failure
+    public BigDecimal depositToAccount(int accountId, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0)
+            return null;
+
+        if (dbManager != null) {
+            return dbManager.deposit(accountId, amount);
+        }
+
+        System.out.println("[BankSystem] (offline) No database for deposit.");
+        return null;
+    }
+
+    // db-backed withdraw, returns the new balance or null on failure
+    public BigDecimal withdrawFromAccount(int accountId, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0)
+            return null;
+
+        if (dbManager != null) {
+            return dbManager.withdraw(accountId, amount);
+        }
+
+        System.out.println("[BankSystem] (offline) No database for withdrawal.");
+        return null;
+    }
+
     public boolean transfer(Account from, Account to, BigDecimal amount) {
         if (from == null || to == null)
             return false;

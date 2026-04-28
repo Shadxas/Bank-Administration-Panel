@@ -280,6 +280,87 @@ public class DatabaseManager {
         return false;
     }
 
+    // deposits money into an account, returns the new balance or null if it failed
+    public BigDecimal deposit(int accountId, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            System.out.println("[DatabaseManager] ERROR: Deposit amount must be positive.");
+            return null;
+        }
+
+        String sql = "UPDATE accounts SET balance = balance + ? "
+                + "WHERE account_id = ? AND status = 'ACTIVE' "
+                + "RETURNING balance";
+
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setBigDecimal(1, amount);
+            ps.setInt(2, accountId);
+
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                BigDecimal newBalance = rs.getBigDecimal("balance");
+                System.out.println("[DatabaseManager] Deposit of $" + amount
+                        + " successful. New balance: $" + newBalance);
+                return newBalance;
+            } else {
+                System.out.println("[DatabaseManager] Deposit failed. Account may not exist or is not ACTIVE.");
+            }
+
+        } catch (SQLException e) {
+            System.out.println("[DatabaseManager] ERROR: Deposit rejected by the database.");
+            System.out.println("Details: " + e.getMessage());
+        }
+
+        return null;
+    }
+
+    // withdraws money from an account, enforces overdraft/savings rules atomically
+    // returns the new balance or null if the withdrawal was rejected
+    public BigDecimal withdraw(int accountId, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            System.out.println("[DatabaseManager] ERROR: Withdrawal amount must be positive.");
+            return null;
+        }
+
+        // atomic conditional update that respects account type rules:
+        // savings: balance after withdrawal must be >= 0
+        // checking: balance after withdrawal must be >= -overdraft_limit
+        String sql = "UPDATE accounts SET balance = balance - ? "
+                + "WHERE account_id = ? AND status = 'ACTIVE' "
+                + "AND ("
+                + "  (account_type = 'SAVINGS'  AND balance - ? >= 0) OR "
+                + "  (account_type = 'CHECKING' AND balance - ? >= -overdraft_limit)"
+                + ") "
+                + "RETURNING balance";
+
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setBigDecimal(1, amount);
+            ps.setInt(2, accountId);
+            ps.setBigDecimal(3, amount);
+            ps.setBigDecimal(4, amount);
+
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                BigDecimal newBalance = rs.getBigDecimal("balance");
+                System.out.println("[DatabaseManager] Withdrawal of $" + amount
+                        + " successful. New balance: $" + newBalance);
+                return newBalance;
+            } else {
+                System.out.println("[DatabaseManager] Withdrawal rejected. "
+                        + "Insufficient funds, overdraft limit reached, or account not ACTIVE.");
+            }
+
+        } catch (SQLException e) {
+            System.out.println("[DatabaseManager] ERROR: Withdrawal rejected by the database.");
+            System.out.println("Details: " + e.getMessage());
+        }
+
+        return null;
+    }
+
     // checks the password hash and returns a user object if it matches
     public User authenticateUser(String fullName, String plaintextPassword) {
 

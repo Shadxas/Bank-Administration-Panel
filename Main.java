@@ -1035,9 +1035,19 @@ class DashboardFrame extends JFrame {
                     "Large Transaction", JOptionPane.WARNING_MESSAGE);
         }
 
-        boolean ok = bankSystem.deposit(acc, amt);
-        JOptionPane.showMessageDialog(this,
-                ok ? "Deposit successful!" : "Deposit failed.");
+        // hit the database
+        BigDecimal newBalance = bankSystem.depositToAccount(acc.getAccountId(), amt);
+        if (newBalance != null) {
+            // sync local account object so the ui list stays correct
+            acc.setBalance(newBalance);
+            JOptionPane.showMessageDialog(this,
+                    "Deposit successful!\nNew balance: $" + newBalance,
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this,
+                    "Deposit failed. The account may not exist or the database is unavailable.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
         refreshAccountList();
     }
 
@@ -1048,9 +1058,20 @@ class DashboardFrame extends JFrame {
         BigDecimal amt = askForAmount("Enter amount to withdraw:");
         if (amt == null)
             return;
-        boolean ok = bankSystem.withdraw(acc, amt);
-        JOptionPane.showMessageDialog(this,
-                ok ? "Withdrawal successful!" : "Withdrawal failed (insufficient funds or limit).");
+
+        // hit the database
+        BigDecimal newBalance = bankSystem.withdrawFromAccount(acc.getAccountId(), amt);
+        if (newBalance != null) {
+            // sync local account object so the ui list stays correct
+            acc.setBalance(newBalance);
+            JOptionPane.showMessageDialog(this,
+                    "Withdrawal successful!\nNew balance: $" + newBalance,
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this,
+                    "Withdrawal failed.\nInsufficient funds or overdraft limit reached.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
         refreshAccountList();
     }
 
