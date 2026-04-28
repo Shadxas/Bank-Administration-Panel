@@ -49,56 +49,20 @@ public class DatabaseManager {
     }
 
     // opens a new connection to the supabase db
-    public Connection getConnection() {
+    // throws sqlexception if the connection fails so callers catch it cleanly
+
+    public Connection getConnection() throws SQLException {
+        if (URL == null || URL.isEmpty()) {
+            throw new SQLException("Database connection failed. DB_URL is not configured.");
+        }
         try {
             return DriverManager.getConnection(URL);
         } catch (SQLException e) {
             System.out.println("[DatabaseManager] ERROR: Failed to connect to the database.");
             System.out.println("Check your connection string, password, and internet connection.");
             System.out.println("Details: " + e.getMessage());
-            return null;
+            throw new SQLException("Database connection failed. Please check your internet or credentials.", e);
         }
-    }
-
-    // inserts a new user with a hashed password into the users table
-    public int registerUser(String fullName, String email, String plaintextPassword,
-            String standing, String accessLevel, String adminRole) {
-
-        // hash before storing
-        String passwordHash = PasswordUtil.hashPassword(plaintextPassword);
-
-        String sql = "INSERT INTO users (full_name, email, password_hash, standing, access_level, admin_role) "
-                + "VALUES (?, ?, ?, ?::standing_enum, ?::access_level_enum, ?::admin_role_enum) "
-                + "RETURNING user_id";
-
-        try (Connection conn = getConnection();
-                PreparedStatement ps = conn.prepareStatement(sql)) {
-
-            ps.setString(1, fullName);
-            ps.setString(2, email);
-            ps.setString(3, passwordHash);
-            ps.setString(4, standing != null ? standing : "GOOD");
-            ps.setString(5, accessLevel != null ? accessLevel : "USER");
-
-            if (adminRole != null) {
-                ps.setString(6, adminRole);
-            } else {
-                ps.setNull(6, Types.OTHER);
-            }
-
-            ResultSet rs = ps.executeQuery();
-            if (rs.next()) {
-                int newId = rs.getInt("user_id");
-                System.out.println("[DatabaseManager] User registered successfully. ID: " + newId);
-                return newId;
-            }
-
-        } catch (SQLException e) {
-            System.out.println("[DatabaseManager] ERROR: Failed to register user.");
-            System.out.println("Details: " + e.getMessage());
-        }
-
-        return -1;
     }
 
     // inserts a new checking or savings account into the accounts table
@@ -143,56 +107,110 @@ public class DatabaseManager {
         return -1;
     }
 
-    // looks up a user by id and prints their info
-    public boolean getUserById(int userId) {
+    // atomic registration: inserts user + their first account in one transaction
+    // if either fails the whole thing rolls back, no orphaned users
+    public int registerUserWithAccount(String fullName, String email, String plaintextPassword,
+            String accountType, BigDecimal initialBalance,
+            BigDecimal overdraftLimit, BigDecimal interestRate) {
 
-        String sql = "SELECT user_id, full_name, email, standing, access_level, admin_role, "
-                + "created_at, updated_at "
-                + "FROM users WHERE user_id = ?";
+        String passwordHash = PasswordUtil.hashPassword(plaintextPassword);
 
-        try (Connection conn = getConnection();
-                PreparedStatement ps = conn.prepareStatement(sql)) {
+        String userSql = "INSERT INTO users (full_name, email, password_hash, standing, access_level, admin_role) "
+                + "VALUES (?, ?, ?, 'GOOD'::standing_enum, 'USER'::access_level_enum, NULL) "
+                + "RETURNING user_id";
 
-            ps.setInt(1, userId);
-            ResultSet rs = ps.executeQuery();
+        String accountSql = "INSERT INTO accounts (owner_id, balance, account_type, status, overdraft_limit, interest_rate) "
+                + "VALUES (?, ?, ?::account_type_enum, 'ACTIVE'::account_status_enum, ?, ?) "
+                + "RETURNING account_id";
 
-            if (rs.next()) {
-                System.out.println("──────────────── User Details ────────────────");
-                System.out.println("  User ID      : " + rs.getInt("user_id"));
-                System.out.println("  Full Name    : " + rs.getString("full_name"));
-                System.out.println("  Email        : " + rs.getString("email"));
-                System.out.println("  Standing     : " + rs.getString("standing"));
-                System.out.println("  Access Level : " + rs.getString("access_level"));
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);
 
-                String adminRole = rs.getString("admin_role");
-                if (adminRole != null) {
-                    System.out.println("  Admin Role   : " + adminRole);
+            // step 1: insert the user
+            int userId;
+            try (PreparedStatement userPs = conn.prepareStatement(userSql)) {
+                userPs.setString(1, fullName);
+                userPs.setString(2, email);
+                userPs.setString(3, passwordHash);
+
+                ResultSet rs = userPs.executeQuery();
+                if (!rs.next()) {
+                    conn.rollback();
+                    System.out.println("[DatabaseManager] Registration failed: user insert returned no ID.");
+                    return -1;
                 }
-
-                System.out.println("  Created At   : " + rs.getTimestamp("created_at"));
-                System.out.println("  Updated At   : " + rs.getTimestamp("updated_at"));
-                System.out.println("──────────────────────────────────────────────");
-                return true;
-            } else {
-                System.out.println("[DatabaseManager] No user found with ID: " + userId);
+                userId = rs.getInt("user_id");
+                System.out.println("[DatabaseManager] Transaction: user created (ID: " + userId + ")");
             }
 
-        } catch (SQLException e) {
-            System.out.println("[DatabaseManager] ERROR: Failed to fetch user.");
-            System.out.println("Details: " + e.getMessage());
-        }
+            // step 2: insert their first account using the new user_id
+            try (PreparedStatement accPs = conn.prepareStatement(accountSql)) {
+                accPs.setInt(1, userId);
+                accPs.setBigDecimal(2, initialBalance != null ? initialBalance : BigDecimal.ZERO);
+                accPs.setString(3, accountType);
 
-        return false;
+                if (overdraftLimit != null) {
+                    accPs.setBigDecimal(4, overdraftLimit);
+                } else {
+                    accPs.setNull(4, Types.NUMERIC);
+                }
+
+                if (interestRate != null) {
+                    accPs.setBigDecimal(5, interestRate);
+                } else {
+                    accPs.setNull(5, Types.NUMERIC);
+                }
+
+                ResultSet rs = accPs.executeQuery();
+                if (!rs.next()) {
+                    conn.rollback();
+                    System.out.println("[DatabaseManager] Registration failed: account insert returned no ID.");
+                    return -1;
+                }
+                int accountId = rs.getInt("account_id");
+                System.out.println("[DatabaseManager] Transaction: account created (ID: " + accountId + ")");
+            }
+
+            // both succeeded
+            conn.commit();
+            System.out.println("[DatabaseManager] Registration committed. User #" + userId
+                    + " with " + accountType + " account.");
+            return userId;
+
+        } catch (SQLException e) {
+            System.out.println("[DatabaseManager] ERROR: Registration transaction failed, rolling back.");
+            System.out.println("Details: " + e.getMessage());
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    System.out.println("[DatabaseManager] ERROR: Rollback also failed.");
+                    System.out.println("Details: " + rollbackEx.getMessage());
+                }
+            }
+            return -1;
+
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true);
+                    conn.close();
+                } catch (SQLException closeEx) {
+                    System.out.println("[DatabaseManager] WARNING: Failed to restore autoCommit.");
+                }
+            }
+        }
     }
 
-    // gets all accounts for a specific user
-    public int getAccountsByUser(int ownerId) {
+    // fetches all accounts for a user, returns real account objects
+    public java.util.List<Account> getAccountsForUser(int ownerId) {
+        java.util.List<Account> accounts = new java.util.ArrayList<Account>();
 
         String sql = "SELECT account_id, owner_id, balance, account_type, status, "
-                + "overdraft_limit, interest_rate, created_at, updated_at "
-                + "FROM accounts WHERE owner_id = ? ORDER BY account_id";
-
-        int count = 0;
+                + "overdraft_limit, interest_rate "
+                + "FROM accounts WHERE owner_id = ? AND status = 'ACTIVE' ORDER BY account_id";
 
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -201,83 +219,107 @@ public class DatabaseManager {
             ResultSet rs = ps.executeQuery();
 
             while (rs.next()) {
-                count++;
+                int accountId = rs.getInt("account_id");
+                int owner = rs.getInt("owner_id");
+                BigDecimal balance = rs.getBigDecimal("balance");
                 String type = rs.getString("account_type");
 
-                System.out.println("──────────── Account #" + count + " ────────────");
-                System.out.println("  Account ID   : " + rs.getInt("account_id"));
-                System.out.println("  Owner ID     : " + rs.getInt("owner_id"));
-                System.out.println("  Type         : " + type);
-                System.out.println("  Status       : " + rs.getString("status"));
-                System.out.println("  Balance      : $" + rs.getBigDecimal("balance"));
-
                 if ("CHECKING".equals(type)) {
-                    System.out.println("  Overdraft    : $" + rs.getBigDecimal("overdraft_limit"));
+                    BigDecimal overdraft = rs.getBigDecimal("overdraft_limit");
+                    accounts.add(new CheckingAccount(accountId, owner, balance, overdraft));
                 } else if ("SAVINGS".equals(type)) {
                     BigDecimal rate = rs.getBigDecimal("interest_rate");
-                    System.out.println("  Interest Rate: " + rate.multiply(new BigDecimal("100")) + "%");
+                    accounts.add(new SavingsAccount(accountId, owner, balance, rate));
                 }
-
-                System.out.println("  Created At   : " + rs.getTimestamp("created_at"));
-                System.out.println("  Updated At   : " + rs.getTimestamp("updated_at"));
-                System.out.println("─────────────────────────────────────────");
             }
 
-            if (count == 0) {
-                System.out.println("[DatabaseManager] No accounts found for user ID: " + ownerId);
-            } else {
-                System.out.println("[DatabaseManager] Total accounts found: " + count);
-            }
+            System.out.println("[DatabaseManager] Loaded " + accounts.size()
+                    + " accounts for user ID: " + ownerId);
 
         } catch (SQLException e) {
             System.out.println("[DatabaseManager] ERROR: Failed to fetch accounts.");
             System.out.println("Details: " + e.getMessage());
         }
 
-        return count;
+        return accounts;
     }
 
-    // updates balance atomically so we dont get race conditions
-    // positive delta = deposit, negative = withdrawal
-    public boolean updateBalance(int accountId, BigDecimal delta) {
+    // fetches all users from the db for admin panel
+    public java.util.List<User> getAllUsers() {
+        java.util.List<User> users = new java.util.ArrayList<User>();
 
-        if (delta == null || delta.compareTo(BigDecimal.ZERO) == 0) {
-            System.out.println("[DatabaseManager] ERROR: Delta amount cannot be zero or null.");
-            return false;
-        }
-
-        String sql = "UPDATE accounts SET balance = balance + ? "
-                + "WHERE account_id = ? AND status = 'ACTIVE' "
-                + "RETURNING account_id, balance";
+        String sql = "SELECT user_id, full_name, email, standing, access_level "
+                + "FROM users ORDER BY user_id";
 
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            ps.setBigDecimal(1, delta);
-            ps.setInt(2, accountId);
-
             ResultSet rs = ps.executeQuery();
-
-            if (rs.next()) {
-                BigDecimal newBalance = rs.getBigDecimal("balance");
-                String action = delta.compareTo(BigDecimal.ZERO) > 0 ? "Deposit" : "Withdrawal";
-                System.out.println("[DatabaseManager] " + action + " successful.");
-                System.out.println("  Account ID  : " + rs.getInt("account_id"));
-                System.out.println("  Amount      : $" + delta.abs());
-                System.out.println("  New Balance : $" + newBalance);
-                return true;
-            } else {
-                System.out.println("[DatabaseManager] ERROR: Update failed. "
-                        + "Account may not exist, may not be ACTIVE, or the "
-                        + "transaction violates a balance constraint.");
+            while (rs.next()) {
+                users.add(new User(
+                        rs.getInt("user_id"),
+                        rs.getString("full_name"),
+                        rs.getString("email"),
+                        null,
+                        rs.getString("standing"),
+                        rs.getString("access_level")));
             }
 
         } catch (SQLException e) {
-            System.out.println("[DatabaseManager] ERROR: Balance update rejected by the database.");
+            System.out.println("[DatabaseManager] ERROR: Failed to fetch all users.");
             System.out.println("Details: " + e.getMessage());
         }
 
-        return false;
+        return users;
+    }
+
+    // returns total money across all active accounts
+    public BigDecimal getTotalSystemBalance() {
+        String sql = "SELECT COALESCE(SUM(balance), 0) AS total FROM accounts WHERE status = 'ACTIVE'";
+
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return rs.getBigDecimal("total");
+            }
+
+        } catch (SQLException e) {
+            System.out.println("[DatabaseManager] ERROR: Failed to get total balance.");
+            System.out.println("Details: " + e.getMessage());
+        }
+
+        return BigDecimal.ZERO;
+    }
+
+    // returns [totalAccounts, checkingCount, savingsCount]
+    public int[] getAccountCountsByType() {
+        int[] counts = { 0, 0, 0 };
+
+        String sql = "SELECT account_type, COUNT(*) AS cnt "
+                + "FROM accounts WHERE status = 'ACTIVE' GROUP BY account_type";
+
+        try (Connection conn = getConnection();
+                PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                String type = rs.getString("account_type");
+                int cnt = rs.getInt("cnt");
+                counts[0] += cnt;
+                if ("CHECKING".equals(type))
+                    counts[1] = cnt;
+                else if ("SAVINGS".equals(type))
+                    counts[2] = cnt;
+            }
+
+        } catch (SQLException e) {
+            System.out.println("[DatabaseManager] ERROR: Failed to get account counts.");
+            System.out.println("Details: " + e.getMessage());
+        }
+
+        return counts;
     }
 
     // deposits money into an account, returns the new balance or null if it failed
@@ -385,10 +427,6 @@ public class DatabaseManager {
         Connection conn = null;
         try {
             conn = getConnection();
-            if (conn == null) {
-                System.out.println("[DatabaseManager] ERROR: No database connection for transfer.");
-                return false;
-            }
 
             // start the transaction
             conn.setAutoCommit(false);
@@ -463,15 +501,16 @@ public class DatabaseManager {
     }
 
     // checks the password hash and returns a user object if it matches
-    public User authenticateUser(String fullName, String plaintextPassword) {
+    // matches on email since its unique, full_name is not
+    public User authenticateUser(String email, String plaintextPassword) {
 
         String sql = "SELECT user_id, full_name, email, password_hash, standing, access_level "
-                + "FROM users WHERE full_name = ?";
+                + "FROM users WHERE email = ?";
 
         try (Connection conn = getConnection();
                 PreparedStatement ps = conn.prepareStatement(sql)) {
 
-            ps.setString(1, fullName);
+            ps.setString(1, email);
             ResultSet rs = ps.executeQuery();
 
             if (rs.next()) {
@@ -479,22 +518,22 @@ public class DatabaseManager {
 
                 // verify against the pbkdf2 hash
                 if (storedHash == null || !PasswordUtil.verifyPassword(plaintextPassword, storedHash)) {
-                    System.out.println("[DatabaseManager] Password verification failed for: " + fullName);
+                    System.out.println("[DatabaseManager] Password verification failed for: " + email);
                     return null;
                 }
 
                 int userId = rs.getInt("user_id");
                 String name = rs.getString("full_name");
-                String email = rs.getString("email");
+                String userEmail = rs.getString("email");
                 String standing = rs.getString("standing");
                 String accessLevel = rs.getString("access_level");
 
                 System.out.println("[DatabaseManager] User authenticated: " + name
-                        + " (ID: " + userId + ")");
+                        + " (ID: " + userId + ", access: " + accessLevel + ")");
 
-                return new User(userId, name, email, null, standing, accessLevel);
+                return new User(userId, name, userEmail, null, standing, accessLevel);
             } else {
-                System.out.println("[DatabaseManager] No user found with name: " + fullName);
+                System.out.println("[DatabaseManager] No user found with email: " + email);
             }
 
         } catch (SQLException e) {

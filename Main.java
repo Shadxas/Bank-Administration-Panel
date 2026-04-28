@@ -6,18 +6,9 @@ import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 public class Main {
-
-    // hardcoded admin creds
-    public static final String ADMIN_USERNAME = "admin";
-    public static final String ADMIN_PASSWORD = "Admin123!";
 
     public static void main(String[] args) {
         // set native look and feel
@@ -149,97 +140,6 @@ class Theme {
     }
 }
 
-// keeps users and accounts in temp. memory until the database is ready
-class GuiState {
-
-    private Map<String, User> usersByName = new HashMap<String, User>();
-    private Map<Integer, List<Account>> accountsByUserId = new HashMap<Integer, List<Account>>();
-    private Set<String> onlineUsers = new HashSet<String>();
-
-    public boolean userExists(String username) {
-        if (username == null)
-            return false;
-        return usersByName.containsKey(username);
-    }
-
-    public void addUser(User user) {
-        if (user == null)
-            return;
-        usersByName.put(user.getUsername(), user);
-        accountsByUserId.put(user.getUserId(), new ArrayList<Account>());
-    }
-
-    public User getUser(String username) {
-        if (username == null)
-            return null;
-        return usersByName.get(username);
-    }
-
-    public List<User> getAllUsers() {
-        return new ArrayList<User>(usersByName.values());
-    }
-
-    public void addAccount(int userId, Account account) {
-        if (account == null)
-            return;
-        List<Account> list = accountsByUserId.get(userId);
-        if (list == null) {
-            list = new ArrayList<Account>();
-            accountsByUserId.put(userId, list);
-        }
-        list.add(account);
-    }
-
-    public List<Account> getAccountsForUser(int userId) {
-        List<Account> list = accountsByUserId.get(userId);
-        if (list == null)
-            return new ArrayList<Account>();
-        return list;
-    }
-
-    public List<Account> getAllAccounts() {
-        List<Account> all = new ArrayList<Account>();
-        for (List<Account> l : accountsByUserId.values()) {
-            all.addAll(l);
-        }
-        return all;
-    }
-
-    public void markOnline(String username) {
-        if (username != null)
-            onlineUsers.add(username);
-    }
-
-    public void markOffline(String username) {
-        if (username != null)
-            onlineUsers.remove(username);
-    }
-
-    public int getOnlineUserCount() {
-        return onlineUsers.size();
-    }
-
-    public int countCheckingAccounts() {
-        int n = 0;
-        for (Account a : getAllAccounts())
-            if (a instanceof CheckingAccount)
-                n++;
-        return n;
-    }
-
-    public int countSavingsAccounts() {
-        int n = 0;
-        for (Account a : getAllAccounts())
-            if (a instanceof SavingsAccount)
-                n++;
-        return n;
-    }
-
-    public BigDecimal getTotalMoneyInBank() {
-        return new Admin().calculateTotalBalance(getAllAccounts());
-    }
-}
-
 // login screen
 class LoginFrame extends JFrame {
 
@@ -248,15 +148,9 @@ class LoginFrame extends JFrame {
     private JLabel statusLabel;
 
     private final BankSystem bankSystem;
-    private final GuiState state;
 
     public LoginFrame(BankSystem bankSystem) {
-        this(bankSystem, new GuiState());
-    }
-
-    public LoginFrame(BankSystem bankSystem, GuiState state) {
         this.bankSystem = bankSystem;
-        this.state = state;
 
         setTitle("Bank Administration Panel - Login");
         setSize(560, 620);
@@ -298,8 +192,8 @@ class LoginFrame extends JFrame {
         card.add(welcome);
         card.add(Box.createVerticalStrut(28));
 
-        // full name
-        JLabel uLabel = new JLabel("FULL NAME");
+        // email field for login
+        JLabel uLabel = new JLabel("EMAIL");
         uLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
         uLabel.setForeground(Theme.SUBTEXT);
         uLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -340,13 +234,6 @@ class LoginFrame extends JFrame {
         signUpButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         signUpButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
         card.add(signUpButton);
-        card.add(Box.createVerticalStrut(8));
-
-        // admin button
-        JButton adminButton = Theme.secondaryButton("Admin Panel");
-        adminButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        adminButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
-        card.add(adminButton);
         card.add(Box.createVerticalStrut(14));
 
         statusLabel = new JLabel(" ");
@@ -374,159 +261,41 @@ class LoginFrame extends JFrame {
         signUpButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                new CreateAccountFrame(bankSystem, state, null, null).setVisible(true);
+                new CreateAccountFrame(bankSystem, null, null).setVisible(true);
                 dispose();
-            }
-        });
-        adminButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                handleAdminAccess();
             }
         });
     }
 
+    // unified login for all users, routes based on access_level
     private void handleLogin() {
-        String fullName = usernameField.getText().trim();
+        String email = usernameField.getText().trim();
         String password = new String(passwordField.getPassword());
 
-        if (fullName.isEmpty() || password.isEmpty()) {
-            statusLabel.setText("Please enter your name and password.");
+        if (email.isEmpty() || password.isEmpty()) {
+            statusLabel.setText("Please enter your email and password.");
             return;
         }
 
-        // check against the database
-        User user = bankSystem.authenticateUser(fullName, password);
+        // authenticate against the database by email
+        User user = bankSystem.authenticateUser(email, password);
 
         if (user != null) {
             statusLabel.setText(" ");
             JOptionPane.showMessageDialog(this,
                     "Welcome back, " + user.getFullName() + "!",
                     "Login Success", JOptionPane.INFORMATION_MESSAGE);
-            new DashboardFrame(bankSystem, state, user).setVisible(true);
+
+            // route based on the user's access level from the database
+            if ("ADMIN".equals(user.getAccessLevel())) {
+                new AdminPanelFrame(bankSystem, user).setVisible(true);
+            } else {
+                new DashboardFrame(bankSystem, user).setVisible(true);
+            }
             dispose();
         } else {
-            statusLabel.setText("Invalid credentials. Check your name and password.");
+            statusLabel.setText("Invalid credentials. Check your email and password.");
         }
-    }
-
-    // admin login popup
-    private void handleAdminAccess() {
-        AdminLoginDialog dlg = new AdminLoginDialog(this);
-        dlg.setVisible(true);
-        if (!dlg.wasSubmitted())
-            return;
-
-        String adminUser = dlg.getEnteredUsername();
-        String adminPass = dlg.getEnteredPassword();
-
-        if (Main.ADMIN_USERNAME.equals(adminUser) && Main.ADMIN_PASSWORD.equals(adminPass)) {
-            new AdminPanelFrame(bankSystem, state).setVisible(true);
-        } else {
-            JOptionPane.showMessageDialog(this,
-                    "Incorrect admin username or password.",
-                    "Access Denied",
-                    JOptionPane.ERROR_MESSAGE);
-        }
-    }
-}
-
-// admin login dialog
-class AdminLoginDialog extends JDialog {
-
-    private JTextField usernameField;
-    private JPasswordField passwordField;
-    private boolean submitted = false;
-    private String enteredUsername = "";
-    private String enteredPassword = "";
-
-    public AdminLoginDialog(JFrame parent) {
-        super(parent, "Admin Login", true);
-        setSize(440, 280);
-        setLocationRelativeTo(parent);
-        getContentPane().setBackground(Theme.BG);
-        setLayout(new BorderLayout());
-
-        // header bar
-        JPanel header = new JPanel(new BorderLayout());
-        header.setBackground(Theme.PRIMARY);
-        header.setBorder(new EmptyBorder(16, 22, 16, 22));
-        JLabel title = new JLabel("Admin Access Required");
-        title.setFont(Theme.FONT_HEADING);
-        title.setForeground(Color.WHITE);
-        header.add(title, BorderLayout.WEST);
-        add(header, BorderLayout.NORTH);
-
-        JPanel form = new JPanel(new GridBagLayout());
-        form.setBackground(Theme.BG);
-        form.setBorder(new EmptyBorder(20, 26, 16, 26));
-
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(8, 6, 8, 6);
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        JLabel ul = new JLabel("Admin Username:");
-        ul.setFont(Theme.FONT_LABEL);
-        form.add(ul, gbc);
-        gbc.gridx = 1;
-        gbc.gridy = 0;
-        usernameField = new JTextField();
-        Theme.styleField(usernameField);
-        form.add(usernameField, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        JLabel pl = new JLabel("Admin Password:");
-        pl.setFont(Theme.FONT_LABEL);
-        form.add(pl, gbc);
-        gbc.gridx = 1;
-        gbc.gridy = 1;
-        passwordField = new JPasswordField();
-        Theme.styleField(passwordField);
-        form.add(passwordField, gbc);
-
-        add(form, BorderLayout.CENTER);
-
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 10));
-        buttons.setBackground(Theme.BG);
-        buttons.setBorder(new EmptyBorder(0, 16, 14, 16));
-        JButton ok = Theme.primaryButton("Login");
-        JButton cancel = Theme.secondaryButton("Cancel");
-        buttons.add(cancel);
-        buttons.add(ok);
-        add(buttons, BorderLayout.SOUTH);
-
-        ok.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                submitted = true;
-                enteredUsername = usernameField.getText().trim();
-                enteredPassword = new String(passwordField.getPassword());
-                dispose();
-            }
-        });
-        cancel.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                submitted = false;
-                dispose();
-            }
-        });
-    }
-
-    public boolean wasSubmitted() {
-        return submitted;
-    }
-
-    public String getEnteredUsername() {
-        return enteredUsername;
-    }
-
-    public String getEnteredPassword() {
-        return enteredPassword;
     }
 }
 
@@ -541,12 +310,10 @@ class CreateAccountFrame extends JFrame {
     private JLabel statusLabel;
 
     private final BankSystem bankSystem;
-    private final GuiState state;
 
-    public CreateAccountFrame(BankSystem bankSystem, GuiState state,
+    public CreateAccountFrame(BankSystem bankSystem,
             String prefilledUsername, String prefilledPassword) {
         this.bankSystem = bankSystem;
-        this.state = state;
 
         setTitle("Create New Account");
         setSize(620, 680);
@@ -687,7 +454,7 @@ class CreateAccountFrame extends JFrame {
         backButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                new LoginFrame(bankSystem, state).setVisible(true);
+                new LoginFrame(bankSystem).setVisible(true);
                 dispose();
             }
         });
@@ -751,8 +518,8 @@ class CreateAccountFrame extends JFrame {
             return;
         }
 
-        // register user in postgres
-        int userId = bankSystem.registerUser(fullName, email, password);
+        // register user + account atomically in one transaction
+        int userId = bankSystem.registerUserWithAccount(fullName, email, password, accountType, depositAmount);
         if (userId == -1) {
             JOptionPane.showMessageDialog(this,
                     "Registration failed.\nThe email may already be in use, or the database is unavailable.",
@@ -760,20 +527,7 @@ class CreateAccountFrame extends JFrame {
             return;
         }
 
-        // create their first account
-        int accountId = bankSystem.createAccount(userId, accountType, depositAmount);
-        if (accountId == -1) {
-            JOptionPane.showMessageDialog(this,
-                    "User registered (ID: " + userId + "), but account creation failed.\n"
-                            + "Please log in and create an account from the dashboard.",
-                    "Partial Success", JOptionPane.WARNING_MESSAGE);
-            new LoginFrame(bankSystem, state).setVisible(true);
-            dispose();
-            return;
-        }
-
         // success - send back to login
-
         JOptionPane.showMessageDialog(this,
                 "Account created successfully!\n"
                         + "Name: " + fullName + "\n"
@@ -784,7 +538,7 @@ class CreateAccountFrame extends JFrame {
                 "Welcome to Apex Bank", JOptionPane.INFORMATION_MESSAGE);
 
         // go back to login
-        new LoginFrame(bankSystem, state).setVisible(true);
+        new LoginFrame(bankSystem).setVisible(true);
         dispose();
     }
 }
@@ -793,18 +547,20 @@ class CreateAccountFrame extends JFrame {
 class DashboardFrame extends JFrame {
 
     private final BankSystem bankSystem;
-    private final GuiState state;
     private final User currentUser;
+
+    // cached accounts loaded from the db
+    private java.util.List<Account> cachedAccounts;
 
     private JLabel welcomeLabel;
     private JLabel totalBalanceLabel;
     private DefaultListModel<String> accountListModel;
     private JList<String> accountList;
 
-    public DashboardFrame(BankSystem bankSystem, GuiState state, User user) {
+    public DashboardFrame(BankSystem bankSystem, User user) {
         this.bankSystem = bankSystem;
-        this.state = state;
         this.currentUser = user;
+        this.cachedAccounts = new java.util.ArrayList<Account>();
 
         setTitle("Bank Dashboard - " + user.getUsername());
         setSize(960, 660);
@@ -943,8 +699,7 @@ class DashboardFrame extends JFrame {
         });
         logoutBtn.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-                state.markOffline(currentUser.getUsername());
-                new LoginFrame(bankSystem, state).setVisible(true);
+                new LoginFrame(bankSystem).setVisible(true);
                 dispose();
             }
         });
@@ -952,14 +707,14 @@ class DashboardFrame extends JFrame {
         refreshAccountList();
     }
 
-    // refresh the account list ui
+    // refresh the account list from the database
     private void refreshAccountList() {
         accountListModel.clear();
-        List<Account> accounts = state.getAccountsForUser(currentUser.getUserId());
-        if (accounts.isEmpty()) {
+        cachedAccounts = bankSystem.getAccountsForUser(currentUser.getUserId());
+        if (cachedAccounts.isEmpty()) {
             accountListModel.addElement("  No accounts yet. Click \"Make New Account\" to create one.");
         } else {
-            for (Account acc : accounts) {
+            for (Account acc : cachedAccounts) {
                 String type = "ACCOUNT";
                 if (acc instanceof CheckingAccount)
                     type = "CHECKING";
@@ -970,13 +725,13 @@ class DashboardFrame extends JFrame {
                                 type, acc.getAccountId(), acc.getBalance().toString()));
             }
         }
-        BigDecimal total = new Admin().calculateTotalBalance(accounts);
+        BigDecimal total = new Admin().calculateTotalBalance(cachedAccounts);
         totalBalanceLabel.setText("$" + total.toString());
     }
 
     // lets user pick an account from a dropdown
     private Account selectAccount(String prompt) {
-        List<Account> accounts = state.getAccountsForUser(currentUser.getUserId());
+        List<Account> accounts = cachedAccounts;
         if (accounts.isEmpty()) {
             JOptionPane.showMessageDialog(this, "You have no accounts yet.");
             return null;
@@ -1001,6 +756,8 @@ class DashboardFrame extends JFrame {
     }
 
     // ask user for a dollar amount
+    private static final BigDecimal MAX_TRANSACTION = new BigDecimal("1000000000");
+
     private BigDecimal askForAmount(String prompt) {
         String input = JOptionPane.showInputDialog(this, prompt, "Amount", JOptionPane.PLAIN_MESSAGE);
         if (input == null)
@@ -1010,6 +767,12 @@ class DashboardFrame extends JFrame {
             BigDecimal amt = new BigDecimal(input.trim().replace(",", ""));
             if (amt.compareTo(BigDecimal.ZERO) <= 0) {
                 JOptionPane.showMessageDialog(this, "Amount must be positive.");
+                return null;
+            }
+            if (amt.compareTo(MAX_TRANSACTION) > 0) {
+                JOptionPane.showMessageDialog(this,
+                        "Amount exceeds maximum transaction limit.",
+                        "Limit Exceeded", JOptionPane.WARNING_MESSAGE);
                 return null;
             }
             return amt;
@@ -1143,13 +906,7 @@ class DashboardFrame extends JFrame {
             return;
         }
 
-        Account account;
-        if ("CHECKING".equals(type)) {
-            account = new CheckingAccount(id, currentUser.getUserId(), initial);
-        } else {
-            account = new SavingsAccount(id, currentUser.getUserId(), initial);
-        }
-        state.addAccount(currentUser.getUserId(), account);
+        // no need to manually add to state, refreshAccountList will re-fetch from db
 
         JOptionPane.showMessageDialog(this,
                 type + " account created (#" + id + ") with $" + initial);
@@ -1176,9 +933,27 @@ class DashboardFrame extends JFrame {
                     "Interest can only be applied to Savings accounts.");
             return;
         }
-        boolean ok = bankSystem.applyInterest(acc);
-        JOptionPane.showMessageDialog(this,
-                ok ? "Interest applied. New balance: $" + acc.getBalance() : "Failed to apply interest.");
+
+        // calculate the interest amount from the local rate and push it to the db
+        SavingsAccount savings = (SavingsAccount) acc;
+        BigDecimal interestAmount = savings.getBalance().multiply(savings.getInterestRate());
+        interestAmount = interestAmount.setScale(2, java.math.RoundingMode.HALF_EVEN);
+
+        if (interestAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            JOptionPane.showMessageDialog(this, "No interest to apply (balance is $0).");
+            return;
+        }
+
+        BigDecimal newBalance = bankSystem.depositToAccount(acc.getAccountId(), interestAmount);
+        if (newBalance != null) {
+            JOptionPane.showMessageDialog(this,
+                    "Interest of $" + interestAmount + " applied!\nNew balance: $" + newBalance,
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this,
+                    "Failed to apply interest. Database may be unavailable.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
         refreshAccountList();
     }
 }
@@ -1187,10 +962,9 @@ class DashboardFrame extends JFrame {
 class AdminPanelFrame extends JFrame {
 
     private final BankSystem bankSystem;
-    private final GuiState state;
+    private final User currentUser;
 
     private JLabel totalUsersValue;
-    private JLabel onlineUsersValue;
     private JLabel totalAccountsValue;
     private JLabel checkingCountValue;
     private JLabel savingsCountValue;
@@ -1199,9 +973,9 @@ class AdminPanelFrame extends JFrame {
     private DefaultListModel<String> userListModel;
     private JList<String> userList;
 
-    public AdminPanelFrame(BankSystem bankSystem, GuiState state) {
+    public AdminPanelFrame(BankSystem bankSystem, User user) {
         this.bankSystem = bankSystem;
-        this.state = state;
+        this.currentUser = user;
 
         setTitle("Admin Panel");
         setSize(900, 700);
@@ -1239,14 +1013,12 @@ class AdminPanelFrame extends JFrame {
         statsGrid.setBackground(Theme.BG);
 
         totalUsersValue = new JLabel("0");
-        onlineUsersValue = new JLabel("0");
         totalAccountsValue = new JLabel("0");
         totalMoneyValue = new JLabel("$0.00");
         checkingCountValue = new JLabel("0");
         savingsCountValue = new JLabel("0");
 
         statsGrid.add(makeStatCard("Total Users", totalUsersValue, Theme.PRIMARY));
-        statsGrid.add(makeStatCard("Users Online", onlineUsersValue, Theme.SUCCESS));
         statsGrid.add(makeStatCard("Total Accounts", totalAccountsValue, Theme.PRIMARY));
         statsGrid.add(makeStatCard("Money in Bank", totalMoneyValue, Theme.ACCENT));
         statsGrid.add(makeStatCard("Checking Accts", checkingCountValue, Theme.PRIMARY));
@@ -1281,19 +1053,27 @@ class AdminPanelFrame extends JFrame {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 14));
         buttonPanel.setBackground(Theme.BG);
         buttonPanel.setBorder(new EmptyBorder(0, 24, 14, 24));
-        JButton refreshBtn = Theme.primaryButton("Refresh");
-        JButton closeBtn = Theme.secondaryButton("Close");
-        buttonPanel.add(closeBtn);
+        JButton dashboardBtn = Theme.primaryButton("My Personal Dashboard");
+        JButton refreshBtn = Theme.secondaryButton("Refresh");
+        JButton logoutBtn = Theme.secondaryButton("Logout");
+        buttonPanel.add(logoutBtn);
         buttonPanel.add(refreshBtn);
+        buttonPanel.add(dashboardBtn);
         add(buttonPanel, BorderLayout.SOUTH);
 
+        dashboardBtn.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                new DashboardFrame(bankSystem, currentUser).setVisible(true);
+            }
+        });
         refreshBtn.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 refreshStats();
             }
         });
-        closeBtn.addActionListener(new ActionListener() {
+        logoutBtn.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
+                new LoginFrame(bankSystem).setVisible(true);
                 dispose();
             }
         });
@@ -1326,17 +1106,17 @@ class AdminPanelFrame extends JFrame {
         return p;
     }
 
-    // updates all the stat labels and user list
+    // updates all the stat labels and user list from the real database
     private void refreshStats() {
-        List<User> allUsers = state.getAllUsers();
-        List<Account> allAccounts = state.getAllAccounts();
+        List<User> allUsers = bankSystem.getAllUsers();
+        int[] counts = bankSystem.getAccountCountsByType();
+        BigDecimal totalMoney = bankSystem.getTotalSystemBalance();
 
         totalUsersValue.setText(String.valueOf(allUsers.size()));
-        onlineUsersValue.setText(String.valueOf(state.getOnlineUserCount()));
-        totalAccountsValue.setText(String.valueOf(allAccounts.size()));
-        checkingCountValue.setText(String.valueOf(state.countCheckingAccounts()));
-        savingsCountValue.setText(String.valueOf(state.countSavingsAccounts()));
-        totalMoneyValue.setText("$" + state.getTotalMoneyInBank());
+        totalAccountsValue.setText(String.valueOf(counts[0]));
+        checkingCountValue.setText(String.valueOf(counts[1]));
+        savingsCountValue.setText(String.valueOf(counts[2]));
+        totalMoneyValue.setText("$" + totalMoney);
 
         userListModel.clear();
         if (allUsers.isEmpty()) {
@@ -1344,7 +1124,7 @@ class AdminPanelFrame extends JFrame {
         } else {
             Admin admin = new Admin();
             for (User u : allUsers) {
-                List<Account> ua = state.getAccountsForUser(u.getUserId());
+                List<Account> ua = bankSystem.getAccountsForUser(u.getUserId());
                 BigDecimal userTotal = admin.calculateTotalBalance(ua);
                 userListModel.addElement(
                         String.format("  User #%d   %-15s   accounts: %d    total: $%s",
