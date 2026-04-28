@@ -361,6 +361,107 @@ public class DatabaseManager {
         return null;
     }
 
+    // atomic transfer between two accounts using a single transaction
+    // if anything fails the whole thing gets rolled back, no ghost money
+    public boolean transferFunds(int fromAccountId, int toAccountId, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            System.out.println("[DatabaseManager] ERROR: Transfer amount must be positive.");
+            return false;
+        }
+
+        // withdraw sql respects overdraft/savings rules
+        String withdrawSql = "UPDATE accounts SET balance = balance - ? "
+                + "WHERE account_id = ? AND status = 'ACTIVE' "
+                + "AND ("
+                + "  (account_type = 'SAVINGS'  AND balance - ? >= 0) OR "
+                + "  (account_type = 'CHECKING' AND balance - ? >= -overdraft_limit)"
+                + ") "
+                + "RETURNING balance";
+
+        String depositSql = "UPDATE accounts SET balance = balance + ? "
+                + "WHERE account_id = ? AND status = 'ACTIVE' "
+                + "RETURNING balance";
+
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            if (conn == null) {
+                System.out.println("[DatabaseManager] ERROR: No database connection for transfer.");
+                return false;
+            }
+
+            // start the transaction
+            conn.setAutoCommit(false);
+
+            // step 1: withdraw from the source account
+            try (PreparedStatement withdrawPs = conn.prepareStatement(withdrawSql)) {
+                withdrawPs.setBigDecimal(1, amount);
+                withdrawPs.setInt(2, fromAccountId);
+                withdrawPs.setBigDecimal(3, amount);
+                withdrawPs.setBigDecimal(4, amount);
+
+                ResultSet rs = withdrawPs.executeQuery();
+                if (!rs.next()) {
+                    // withdrawal rejected, roll back and bail
+                    conn.rollback();
+                    System.out.println("[DatabaseManager] Transfer failed: withdrawal from account #"
+                            + fromAccountId + " was rejected (insufficient funds or not ACTIVE).");
+                    return false;
+                }
+                System.out.println("[DatabaseManager] Transfer withdraw OK. Source balance: $"
+                        + rs.getBigDecimal("balance"));
+            }
+
+            // step 2: deposit into the destination account
+            try (PreparedStatement depositPs = conn.prepareStatement(depositSql)) {
+                depositPs.setBigDecimal(1, amount);
+                depositPs.setInt(2, toAccountId);
+
+                ResultSet rs = depositPs.executeQuery();
+                if (!rs.next()) {
+                    // deposit failed, roll back the withdrawal too
+                    conn.rollback();
+                    System.out.println("[DatabaseManager] Transfer failed: deposit to account #"
+                            + toAccountId + " failed (account may not exist or not ACTIVE).");
+                    return false;
+                }
+                System.out.println("[DatabaseManager] Transfer deposit OK. Dest balance: $"
+                        + rs.getBigDecimal("balance"));
+            }
+
+            // both succeeded, commit the transaction
+            conn.commit();
+            System.out.println("[DatabaseManager] Transfer of $" + amount + " from #"
+                    + fromAccountId + " to #" + toAccountId + " committed successfully.");
+            return true;
+
+        } catch (SQLException e) {
+            // something blew up, roll everything back
+            System.out.println("[DatabaseManager] ERROR: Transfer failed, rolling back.");
+            System.out.println("Details: " + e.getMessage());
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    System.out.println("[DatabaseManager] ERROR: Rollback also failed.");
+                    System.out.println("Details: " + rollbackEx.getMessage());
+                }
+            }
+            return false;
+
+        } finally {
+            // always restore autocommit and close the connection
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true);
+                    conn.close();
+                } catch (SQLException closeEx) {
+                    System.out.println("[DatabaseManager] WARNING: Failed to restore autoCommit.");
+                }
+            }
+        }
+    }
+
     // checks the password hash and returns a user object if it matches
     public User authenticateUser(String fullName, String plaintextPassword) {
 

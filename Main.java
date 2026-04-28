@@ -1082,16 +1082,31 @@ class DashboardFrame extends JFrame {
         Account to = selectAccount("Choose the DESTINATION account:");
         if (to == null)
             return;
-        if (from == to) {
+        if (from.getAccountId() == to.getAccountId()) {
             JOptionPane.showMessageDialog(this, "Source and destination cannot be the same.");
             return;
         }
         BigDecimal amt = askForAmount("Enter amount to transfer:");
         if (amt == null)
             return;
-        boolean ok = bankSystem.transfer(from, to, amt);
-        JOptionPane.showMessageDialog(this,
-                ok ? "Transfer successful!" : "Transfer failed.");
+
+        // hit the database with an atomic transaction
+        boolean ok = bankSystem.transferBetweenAccounts(
+                from.getAccountId(), to.getAccountId(), amt);
+
+        if (ok) {
+            // sync local balances so the ui list is correct
+            from.setBalance(from.getBalance().subtract(amt));
+            to.setBalance(to.getBalance().add(amt));
+            JOptionPane.showMessageDialog(this,
+                    "Transfer of $" + amt + " successful!\n"
+                            + "From account #" + from.getAccountId() + " → account #" + to.getAccountId(),
+                    "Success", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this,
+                    "Transfer failed.\nInvalid account or insufficient funds.",
+                    "Error", JOptionPane.ERROR_MESSAGE);
+        }
         refreshAccountList();
     }
 

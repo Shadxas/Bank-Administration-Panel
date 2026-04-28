@@ -149,6 +149,21 @@ public class BankSystem {
         return true;
     }
 
+    // db-backed atomic transfer, returns true if the whole thing committed
+    public boolean transferBetweenAccounts(int fromAccountId, int toAccountId, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0)
+            return false;
+        if (fromAccountId == toAccountId)
+            return false;
+
+        if (dbManager != null) {
+            return dbManager.transferFunds(fromAccountId, toAccountId, amount);
+        }
+
+        System.out.println("[BankSystem] (offline) No database for transfer.");
+        return false;
+    }
+
     public boolean applyInterest(Account account) {
         if (!(account instanceof SavingsAccount)) {
             System.out.println("Interest can only be applied to savings accounts.");
