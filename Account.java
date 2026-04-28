@@ -2,51 +2,50 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 public class Account {
-    // Account Fields
+
     protected int accountId;
     protected int ownerId;
     protected BigDecimal balance;
+    protected String status;
 
-    // Constructor
     public Account(int accountId, int ownerId, BigDecimal balance) {
         this.accountId = accountId;
         this.ownerId = ownerId;
         this.balance = normalizeAmount(balance);
+        this.status = "ACTIVE";
     }
 
-    private BigDecimal normalizeAmount(BigDecimal amount) {
+    // rounds to 2 decimal places
+    protected BigDecimal normalizeAmount(BigDecimal amount) {
         if (amount == null) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_EVEN);
         }
         return amount.setScale(2, RoundingMode.HALF_EVEN);
     }
 
-    // withdraw and deposit methods
-    public void deposit(BigDecimal amount) {
+    public boolean deposit(BigDecimal amount) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
-            System.out.print("Enter a valid amount to deposit.");
-        } else {
-            balance = balance.add(normalizeAmount(amount));
-            System.out.print("Deposit successful. New Balance: " + balance);
+            System.out.println("Deposit failed: amount must be positive.");
+            return false;
         }
+        balance = balance.add(normalizeAmount(amount));
+        System.out.println("Deposit successful. New Balance: " + balance);
+        return true;
     }
 
-    public void withdraw(BigDecimal amount) {
-        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0 || amount.compareTo(balance) > 0) {
-            System.out.print("Enter a valid amount to withdraw.");
-        } else {
-            balance = balance.subtract(normalizeAmount(amount));
-            System.out.print("Withdraw successful. Withdrawed: " + amount + ". New Balance is: " + balance);
+    // no overdraft allowed on base account
+    public boolean withdraw(BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            System.out.println("Withdrawal failed: amount must be positive.");
+            return false;
         }
-    }
-
-    // getter and setter methods
-    public BigDecimal getBalance() {
-        return this.balance;
-    }
-
-    public void setBalance(BigDecimal balance) {
-        this.balance = normalizeAmount(balance);
+        if (amount.compareTo(balance) > 0) {
+            System.out.println("Withdrawal failed: insufficient funds.");
+            return false;
+        }
+        balance = balance.subtract(normalizeAmount(amount));
+        System.out.println("Withdrawal successful. New Balance: " + balance);
+        return true;
     }
 
     public int getAccountId() {
@@ -57,13 +56,29 @@ public class Account {
         return ownerId;
     }
 
-    // Tostring method
+    public BigDecimal getBalance() {
+        return this.balance;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setBalance(BigDecimal balance) {
+        this.balance = normalizeAmount(balance);
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
     @Override
     public String toString() {
         return "Account{" +
                 "accountId=" + accountId +
                 ", ownerId=" + ownerId +
                 ", balance=" + balance +
+                ", status='" + status + '\'' +
                 '}';
     }
 }

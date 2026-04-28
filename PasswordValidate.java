@@ -1,11 +1,12 @@
 public class PasswordValidate {
-    // to be a valid password the length needs to be in between 8 - 16 and contain one special character
+    // to be a valid password the length needs to be in between 8 - 16 and contain
+    // one special character
     private char[] specialChars = {
-        '!', '@', '#', '$', '%', '^', '&', '*',
-        '(', ')', '-', '_', '=', '+',
-        '[', ']', '{', '}', ';', ':',
-        '\'', '"', ',', '.', '<', '>',
-        '/', '?', '|', '`', '~'
+            '!', '@', '#', '$', '%', '^', '&', '*',
+            '(', ')', '-', '_', '=', '+',
+            '[', ']', '{', '}', ';', ':',
+            '\'', '"', ',', '.', '<', '>',
+            '/', '?', '|', '`', '~'
     };
 
     public boolean isStrong(String password) {

@@ -15,18 +15,19 @@ import java.util.Set;
 
 public class Main {
 
-    // admin login
+    // hardcoded admin creds
     public static final String ADMIN_USERNAME = "admin";
     public static final String ADMIN_PASSWORD = "Admin123!";
 
     public static void main(String[] args) {
-        // make it look like a normal app on the user's OS
+        // set native look and feel
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
         }
 
-        final BankSystem bankSystem = new BankSystem();
+        final DatabaseManager dbManager = new DatabaseManager();
+        final BankSystem bankSystem = new BankSystem(dbManager);
 
         // launch the login window
         SwingUtilities.invokeLater(new Runnable() {
@@ -239,7 +240,7 @@ class GuiState {
     }
 }
 
-// the first screen - login or sign up
+// login screen
 class LoginFrame extends JFrame {
 
     private JTextField usernameField;
@@ -264,7 +265,7 @@ class LoginFrame extends JFrame {
         getContentPane().setBackground(Theme.BG);
         setLayout(new BorderLayout());
 
-        // navy banner at the top
+        // banner
         JPanel banner = new JPanel(new BorderLayout());
         banner.setBackground(Theme.PRIMARY);
         banner.setBorder(new EmptyBorder(28, 30, 28, 30));
@@ -281,7 +282,7 @@ class LoginFrame extends JFrame {
 
         add(banner, BorderLayout.NORTH);
 
-        // center area with the login card
+        // login card
         JPanel centerWrap = new JPanel(new GridBagLayout());
         centerWrap.setBackground(Theme.BG);
 
@@ -297,8 +298,8 @@ class LoginFrame extends JFrame {
         card.add(welcome);
         card.add(Box.createVerticalStrut(28));
 
-        // username
-        JLabel uLabel = new JLabel("USERNAME");
+        // full name
+        JLabel uLabel = new JLabel("FULL NAME");
         uLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
         uLabel.setForeground(Theme.SUBTEXT);
         uLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -312,7 +313,7 @@ class LoginFrame extends JFrame {
         card.add(usernameField);
         card.add(Box.createVerticalStrut(16));
 
-        // password
+        // password field
         JLabel pLabel = new JLabel("PASSWORD");
         pLabel.setFont(new Font("SansSerif", Font.BOLD, 11));
         pLabel.setForeground(Theme.SUBTEXT);
@@ -328,11 +329,18 @@ class LoginFrame extends JFrame {
         card.add(Box.createVerticalStrut(20));
 
         // login button
-        JButton loginButton = Theme.primaryButton("Login / Sign Up");
+        JButton loginButton = Theme.primaryButton("Login");
         loginButton.setAlignmentX(Component.LEFT_ALIGNMENT);
         loginButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
         card.add(loginButton);
-        card.add(Box.createVerticalStrut(10));
+        card.add(Box.createVerticalStrut(8));
+
+        // sign-up button
+        JButton signUpButton = Theme.secondaryButton("Create Account");
+        signUpButton.setAlignmentX(Component.LEFT_ALIGNMENT);
+        signUpButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+        card.add(signUpButton);
+        card.add(Box.createVerticalStrut(8));
 
         // admin button
         JButton adminButton = Theme.secondaryButton("Admin Panel");
@@ -350,7 +358,7 @@ class LoginFrame extends JFrame {
         centerWrap.add(card);
         add(centerWrap, BorderLayout.CENTER);
 
-        // small footer
+        // footer
         JLabel footer = new JLabel("Secure banking, simplified.", SwingConstants.CENTER);
         footer.setFont(new Font("SansSerif", Font.ITALIC, 12));
         footer.setForeground(Theme.SUBTEXT);
@@ -363,6 +371,13 @@ class LoginFrame extends JFrame {
                 handleLogin();
             }
         });
+        signUpButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                new CreateAccountFrame(bankSystem, state, null, null).setVisible(true);
+                dispose();
+            }
+        });
         adminButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -372,45 +387,30 @@ class LoginFrame extends JFrame {
     }
 
     private void handleLogin() {
-        String username = usernameField.getText().trim();
+        String fullName = usernameField.getText().trim();
         String password = new String(passwordField.getPassword());
 
-        if (username.isEmpty() || password.isEmpty()) {
-            statusLabel.setText("Please enter username and password.");
+        if (fullName.isEmpty() || password.isEmpty()) {
+            statusLabel.setText("Please enter your name and password.");
             return;
         }
 
-        // user already signed up - try to log them in
-        if (state.userExists(username)) {
-            User user = state.getUser(username);
-            boolean systemOk = bankSystem.login(username, password);
-            boolean passwordOk = user.getPassword().equals(password);
-            if (systemOk && passwordOk) {
-                state.markOnline(username);
-                statusLabel.setText(" ");
-                JOptionPane.showMessageDialog(this,
-                        "Welcome back, " + username + "!",
-                        "Login Success", JOptionPane.INFORMATION_MESSAGE);
-                new DashboardFrame(bankSystem, state, user).setVisible(true);
-                dispose();
-            } else {
-                statusLabel.setText("Incorrect password.");
-            }
-            return;
-        }
+        // check against the database
+        User user = bankSystem.authenticateUser(fullName, password);
 
-        // user doesn't exist - ask if they want to sign up
-        int choice = JOptionPane.showConfirmDialog(this,
-                "User \"" + username + "\" not found.\nWould you like to create a new account?",
-                "User Not Found",
-                JOptionPane.YES_NO_OPTION);
-        if (choice == JOptionPane.YES_OPTION) {
-            new CreateAccountFrame(bankSystem, state, username, password).setVisible(true);
+        if (user != null) {
+            statusLabel.setText(" ");
+            JOptionPane.showMessageDialog(this,
+                    "Welcome back, " + user.getFullName() + "!",
+                    "Login Success", JOptionPane.INFORMATION_MESSAGE);
+            new DashboardFrame(bankSystem, state, user).setVisible(true);
             dispose();
+        } else {
+            statusLabel.setText("Invalid credentials. Check your name and password.");
         }
     }
 
-    // ask for admin login before opening the admin panel
+    // admin login popup
     private void handleAdminAccess() {
         AdminLoginDialog dlg = new AdminLoginDialog(this);
         dlg.setVisible(true);
@@ -431,7 +431,7 @@ class LoginFrame extends JFrame {
     }
 }
 
-// popup for admin login
+// admin login dialog
 class AdminLoginDialog extends JDialog {
 
     private JTextField usernameField;
@@ -530,10 +530,11 @@ class AdminLoginDialog extends JDialog {
     }
 }
 
-// sign-up screen for new users
+// signup screen
 class CreateAccountFrame extends JFrame {
 
     private JTextField usernameField;
+    private JTextField emailField;
     private JPasswordField passwordField;
     private JComboBox<String> accountTypeBox;
     private JTextField initialDepositField;
@@ -554,7 +555,7 @@ class CreateAccountFrame extends JFrame {
         getContentPane().setBackground(Theme.BG);
         setLayout(new BorderLayout());
 
-        // navy banner
+        // banner
         JPanel banner = new JPanel(new BorderLayout());
         banner.setBackground(Theme.PRIMARY);
         banner.setBorder(new EmptyBorder(24, 30, 24, 30));
@@ -564,13 +565,13 @@ class CreateAccountFrame extends JFrame {
         banner.add(title, BorderLayout.WEST);
         add(banner, BorderLayout.NORTH);
 
-        // center card
+        // card
         JPanel centerWrap = new JPanel(new GridBagLayout());
         centerWrap.setBackground(Theme.BG);
 
         JPanel card = Theme.card();
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
-        card.setPreferredSize(new Dimension(480, 520));
+        card.setPreferredSize(new Dimension(480, 580));
 
         JLabel heading = new JLabel("New Customer Registration");
         heading.setFont(Theme.FONT_HEADING);
@@ -586,8 +587,8 @@ class CreateAccountFrame extends JFrame {
         card.add(underline);
         card.add(Box.createVerticalStrut(20));
 
-        // username
-        card.add(makeFieldLabel("USERNAME"));
+        // full name
+        card.add(makeFieldLabel("FULL NAME"));
         card.add(Box.createVerticalStrut(6));
         usernameField = new JTextField();
         Theme.styleField(usernameField);
@@ -596,6 +597,16 @@ class CreateAccountFrame extends JFrame {
         usernameField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
         usernameField.setAlignmentX(Component.LEFT_ALIGNMENT);
         card.add(usernameField);
+        card.add(Box.createVerticalStrut(14));
+
+        // email
+        card.add(makeFieldLabel("EMAIL"));
+        card.add(Box.createVerticalStrut(6));
+        emailField = new JTextField();
+        Theme.styleField(emailField);
+        emailField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 38));
+        emailField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        card.add(emailField);
         card.add(Box.createVerticalStrut(14));
 
         // password
@@ -691,22 +702,24 @@ class CreateAccountFrame extends JFrame {
     }
 
     private void handleCreate() {
-        String username = usernameField.getText().trim();
+        String fullName = usernameField.getText().trim();
+        String email = emailField.getText().trim();
         String password = new String(passwordField.getPassword());
         String accountType = (String) accountTypeBox.getSelectedItem();
-        // strip commas so "10,000" works the same as "10000"
+        // strip commas so 10,000 works
         String depositStr = initialDepositField.getText().trim().replace(",", "");
 
-        if (username.isEmpty() || password.isEmpty()) {
-            statusLabel.setText("Please fill in username and password.");
-            return;
-        }
-        if (state.userExists(username)) {
-            statusLabel.setText("Username already taken.");
+        if (fullName.isEmpty() || password.isEmpty()) {
+            statusLabel.setText("Please fill in your name and password.");
             return;
         }
 
-        // CD class isn't built yet
+        // auto generate email if left blank
+        if (email.isEmpty()) {
+            email = fullName.toLowerCase().replace(" ", ".") + "@apexbank.com";
+        }
+
+        // cd not implemented yet
         if ("CD".equals(accountType)) {
             JOptionPane.showMessageDialog(this,
                     "CD accounts are coming soon. Please choose CHECKING or SAVINGS for now.",
@@ -714,14 +727,14 @@ class CreateAccountFrame extends JFrame {
             return;
         }
 
-        // check password rules
+        // validate password
         PasswordValidate validator = new PasswordValidate();
         if (!validator.isStrong(password)) {
             statusLabel.setText("Password is not strong (8-16 chars + special character).");
             return;
         }
 
-        // make sure deposit is a valid number
+        // parse deposit amount
         BigDecimal depositAmount;
         if (depositStr.isEmpty()) {
             statusLabel.setText("Please enter an initial deposit amount.");
@@ -738,43 +751,45 @@ class CreateAccountFrame extends JFrame {
             return;
         }
 
-        // register the user and create their first account
-        int userId = bankSystem.registerUser(username, password, accountType);
+        // register user in postgres
+        int userId = bankSystem.registerUser(fullName, email, password);
         if (userId == -1) {
-            statusLabel.setText("Failed to register user.");
-            return;
-        }
-        int accountId = bankSystem.createAccount(userId, accountType, depositAmount);
-        if (accountId == -1) {
-            statusLabel.setText("Failed to create account.");
+            JOptionPane.showMessageDialog(this,
+                    "Registration failed.\nThe email may already be in use, or the database is unavailable.",
+                    "Registration Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        // remember the user/account in our local state
-        User user = new User(userId, username, password, accountType);
-        Account account;
-        if ("CHECKING".equals(accountType)) {
-            account = new CheckingAccount(accountId, userId, depositAmount);
-        } else {
-            account = new SavingsAccount(accountId, userId, depositAmount);
+        // create their first account
+        int accountId = bankSystem.createAccount(userId, accountType, depositAmount);
+        if (accountId == -1) {
+            JOptionPane.showMessageDialog(this,
+                    "User registered (ID: " + userId + "), but account creation failed.\n"
+                            + "Please log in and create an account from the dashboard.",
+                    "Partial Success", JOptionPane.WARNING_MESSAGE);
+            new LoginFrame(bankSystem, state).setVisible(true);
+            dispose();
+            return;
         }
-        state.addUser(user);
-        state.addAccount(userId, account);
-        state.markOnline(username);
+
+        // success - send back to login
 
         JOptionPane.showMessageDialog(this,
                 "Account created successfully!\n"
-                        + "Username: " + username + "\n"
+                        + "Name: " + fullName + "\n"
+                        + "Email: " + email + "\n"
                         + "Account Type: " + accountType + "\n"
-                        + "Initial Deposit: $" + depositAmount,
-                "Success", JOptionPane.INFORMATION_MESSAGE);
+                        + "Initial Deposit: $" + depositAmount + "\n\n"
+                        + "Please log in with your credentials.",
+                "Welcome to Apex Bank", JOptionPane.INFORMATION_MESSAGE);
 
-        new DashboardFrame(bankSystem, state, user).setVisible(true);
+        // go back to login
+        new LoginFrame(bankSystem, state).setVisible(true);
         dispose();
     }
 }
 
-// main screen after login - shows balance and lets user do everything
+// dashboard after login
 class DashboardFrame extends JFrame {
 
     private final BankSystem bankSystem;
@@ -798,7 +813,7 @@ class DashboardFrame extends JFrame {
         getContentPane().setBackground(Theme.BG);
         setLayout(new BorderLayout());
 
-        // top banner with welcome and total balance
+        // banner with name and balance
         JPanel banner = new JPanel(new BorderLayout());
         banner.setBackground(Theme.PRIMARY);
         banner.setBorder(new EmptyBorder(24, 30, 24, 30));
@@ -832,7 +847,7 @@ class DashboardFrame extends JFrame {
         banner.add(right, BorderLayout.EAST);
         add(banner, BorderLayout.NORTH);
 
-        // sidebar with action buttons on the left
+        // sidebar buttons
         JPanel sidebar = new JPanel();
         sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
         sidebar.setBackground(Theme.PRIMARY_DARK);
@@ -853,7 +868,7 @@ class DashboardFrame extends JFrame {
         JButton applyInterestBtn = Theme.sidebarButton("\u0025  Apply Interest");
         JButton logoutBtn = Theme.sidebarButton("\u2192  Logout");
 
-        // make the sidebar buttons stretch to full width
+        // make buttons fill the sidebar width
         Dimension btnSize = new Dimension(220, 44);
         JButton[] sideButtons = { depositBtn, withdrawBtn, transferBtn, newAccountBtn,
                 howMuchBtn, applyInterestBtn, logoutBtn };
@@ -866,7 +881,7 @@ class DashboardFrame extends JFrame {
         sidebar.add(Box.createVerticalGlue());
         add(sidebar, BorderLayout.WEST);
 
-        // main content - account list inside a card
+        // account list area
         JPanel content = new JPanel(new BorderLayout());
         content.setBackground(Theme.BG);
         content.setBorder(new EmptyBorder(24, 24, 24, 24));
@@ -937,7 +952,7 @@ class DashboardFrame extends JFrame {
         refreshAccountList();
     }
 
-    // re-loads the account list and total balance
+    // refresh the account list ui
     private void refreshAccountList() {
         accountListModel.clear();
         List<Account> accounts = state.getAccountsForUser(currentUser.getUserId());
@@ -959,7 +974,7 @@ class DashboardFrame extends JFrame {
         totalBalanceLabel.setText("$" + total.toString());
     }
 
-    // dropdown to pick one of the user's accounts
+    // lets user pick an account from a dropdown
     private Account selectAccount(String prompt) {
         List<Account> accounts = state.getAccountsForUser(currentUser.getUserId());
         if (accounts.isEmpty()) {
@@ -985,13 +1000,13 @@ class DashboardFrame extends JFrame {
         return null;
     }
 
-    // popup to type in a dollar amount
+    // ask user for a dollar amount
     private BigDecimal askForAmount(String prompt) {
         String input = JOptionPane.showInputDialog(this, prompt, "Amount", JOptionPane.PLAIN_MESSAGE);
         if (input == null)
             return null;
         try {
-            // strip commas so "10,000" is treated the same as "10000"
+            // strip commas
             BigDecimal amt = new BigDecimal(input.trim().replace(",", ""));
             if (amt.compareTo(BigDecimal.ZERO) <= 0) {
                 JOptionPane.showMessageDialog(this, "Amount must be positive.");
@@ -1012,7 +1027,7 @@ class DashboardFrame extends JFrame {
         if (amt == null)
             return;
 
-        // warn if it's a big transaction
+        // flag large transactions
         Admin admin = new Admin();
         if (admin.isSuspicious(acc, amt)) {
             JOptionPane.showMessageDialog(this,
@@ -1060,7 +1075,6 @@ class DashboardFrame extends JFrame {
     }
 
     private void handleNewAccount() {
-        // dropdown + info button in a small popup
         String[] types = { "CHECKING", "SAVINGS", "CD" };
         JComboBox<String> typeBox = new JComboBox<String>(types);
         JPanel typePanel = new JPanel(new BorderLayout(8, 0));
@@ -1120,7 +1134,7 @@ class DashboardFrame extends JFrame {
         Account acc = selectAccount("Apply interest to which account?");
         if (acc == null)
             return;
-        // only savings accounts earn interest
+        // only savings gets interest
         if (!(acc instanceof SavingsAccount)) {
             JOptionPane.showMessageDialog(this,
                     "Interest can only be applied to Savings accounts.");
@@ -1133,7 +1147,7 @@ class DashboardFrame extends JFrame {
     }
 }
 
-// admin-only screen showing system stats
+// admin panel
 class AdminPanelFrame extends JFrame {
 
     private final BankSystem bankSystem;
@@ -1160,7 +1174,7 @@ class AdminPanelFrame extends JFrame {
         getContentPane().setBackground(Theme.BG);
         setLayout(new BorderLayout());
 
-        // dark banner
+        // banner
         JPanel banner = new JPanel(new BorderLayout());
         banner.setBackground(Theme.PRIMARY_DARK);
         banner.setBorder(new EmptyBorder(24, 30, 24, 30));
@@ -1184,7 +1198,7 @@ class AdminPanelFrame extends JFrame {
         content.setBackground(Theme.BG);
         content.setBorder(new EmptyBorder(20, 24, 20, 24));
 
-        // stat cards (3 across, 2 rows)
+        // stat cards grid
         JPanel statsGrid = new JPanel(new GridLayout(2, 3, 14, 14));
         statsGrid.setBackground(Theme.BG);
 
@@ -1204,7 +1218,7 @@ class AdminPanelFrame extends JFrame {
 
         content.add(statsGrid, BorderLayout.NORTH);
 
-        // user list inside a card
+        // user list
         JPanel listCard = Theme.card();
         listCard.setLayout(new BorderLayout());
 
@@ -1227,7 +1241,7 @@ class AdminPanelFrame extends JFrame {
         content.add(listCard, BorderLayout.CENTER);
         add(content, BorderLayout.CENTER);
 
-        // bottom buttons
+        // buttons at the bottom
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 14));
         buttonPanel.setBackground(Theme.BG);
         buttonPanel.setBorder(new EmptyBorder(0, 24, 14, 24));
@@ -1251,7 +1265,7 @@ class AdminPanelFrame extends JFrame {
         refreshStats();
     }
 
-    // creates a small "card" showing one stat
+    // builds one stat card widget
     private JPanel makeStatCard(String label, JLabel valueLabel, Color accent) {
         JPanel p = new JPanel();
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
@@ -1276,7 +1290,7 @@ class AdminPanelFrame extends JFrame {
         return p;
     }
 
-    // pulls the latest numbers and updates the labels
+    // updates all the stat labels and user list
     private void refreshStats() {
         List<User> allUsers = state.getAllUsers();
         List<Account> allAccounts = state.getAllAccounts();
@@ -1304,7 +1318,7 @@ class AdminPanelFrame extends JFrame {
     }
 }
 
-// little "?" button that explains what each account type means
+// info button that explains account types
 class AccountTypeInfo {
 
     private static final String DESCRIPTION = "<html><body style='width: 340px; font-family: SansSerif; font-size: 12px;'>"
@@ -1358,14 +1372,13 @@ class AccountTypeInfo {
     }
 }
 
-// auto-formats a text field as the user types: 10000 -> 10,000, 100000 ->
-// 100,000
+// formats money fields with commas as you type
 class MoneyFieldFormatter {
 
     public static void attach(final javax.swing.JTextField field) {
         field.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
 
-            // a flag so we don't re-trigger ourselves while updating the field
+            // flag so we dont loop while updating
             private boolean updating = false;
 
             public void insertUpdate(javax.swing.event.DocumentEvent e) {
@@ -1398,7 +1411,7 @@ class MoneyFieldFormatter {
         });
     }
 
-    // keeps only digits and at most one decimal point
+    // strips out everything except digits and one decimal
     private static String stripToNumber(String s) {
         StringBuilder sb = new StringBuilder();
         boolean dotSeen = false;
@@ -1414,7 +1427,7 @@ class MoneyFieldFormatter {
         return sb.toString();
     }
 
-    // adds commas to the integer part: "10000.50" -> "10,000.50"
+    // adds commas to the number part
     private static String addCommas(String s) {
         if (s == null || s.isEmpty())
             return "";
