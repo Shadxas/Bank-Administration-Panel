@@ -1,6 +1,6 @@
 # Bank Administration Panel
 
-A Java-based banking administration application that allows users and administrators to manage bank accounts through a desktop GUI. The project uses object-oriented programming concepts with classes such as `User`, `Admin`, `Account`, `CheckingAccount`, and `SavingsAccount`.
+A Java-based banking administration application that allows users and administrators to manage bank accounts through a desktop GUI. The project uses object-oriented programming concepts with classes such as `User`, `Admin`, `Account`, `CheckingAccount`, `SuperBase` and `SavingsAccount`.
 
 ## Features
 
@@ -15,6 +15,7 @@ A Java-based banking administration application that allows users and administra
 - Password validation
 - Database-backed account and user management
 - Java Swing graphical interface
+- SuperBase
 
 ## Technologies Used
 
@@ -23,6 +24,7 @@ A Java-based banking administration application that allows users and administra
 - Object-Oriented Programming
 - BigDecimal for currency handling
 - Database integration through `DatabaseManager`
+- Java.AWT lib for window gui
 
 ## Project Structure
 
