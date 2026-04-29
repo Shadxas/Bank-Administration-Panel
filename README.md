@@ -40,7 +40,7 @@ Bank-Administration-Panel/
 ├── User.java
 ├── database/
 └── lib/
-
+```
 ## HOW TO RUN
 
 All a user would need to do to run this repo is click on Main.java and run it will automatically connect to our backend and save user info if you ever want to retrive it back always log back in the same device or a diffrent one.
