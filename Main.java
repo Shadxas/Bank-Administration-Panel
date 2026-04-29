@@ -822,10 +822,10 @@ class DashboardFrame extends JFrame {
         if (amt == null)
             return;
 
-        // hit the database
+        // hit the database     
         BigDecimal newBalance = bankSystem.withdrawFromAccount(acc.getAccountId(), amt);
         if (newBalance != null) {
-            // sync local account object so the ui list stays correct
+            // sync local account object so the ui list stays correct    
             acc.setBalance(newBalance);
             JOptionPane.showMessageDialog(this,
                     "Withdrawal successful!\nNew balance: $" + newBalance,
@@ -853,7 +853,7 @@ class DashboardFrame extends JFrame {
         if (amt == null)
             return;
 
-        // hit the database with an atomic transaction
+        // hit the database with an atomic transaction   
         boolean ok = bankSystem.transferBetweenAccounts(
                 from.getAccountId(), to.getAccountId(), amt);
 
@@ -906,7 +906,7 @@ class DashboardFrame extends JFrame {
             return;
         }
 
-        // no need to manually add to state, refreshAccountList will re-fetch from db
+        // no need to manually add to state, refreshAccountList will re-fetch from db 
 
         JOptionPane.showMessageDialog(this,
                 type + " account created (#" + id + ") with $" + initial);

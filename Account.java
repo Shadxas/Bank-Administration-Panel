@@ -33,7 +33,7 @@ public class Account {
         return true;
     }
 
-    // no overdraft allowed on base account
+    // no overdraft allowed on base account   
     public boolean withdraw(BigDecimal amount) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             System.out.println("Withdrawal failed: amount must be positive.");

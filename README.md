@@ -43,4 +43,4 @@ Bank-Administration-Panel/
 ```
 ## HOW TO RUN
 
-All a user would need to do to run this repo is click on Main.java and run it will automatically connect to our backend and save user info if you ever want to retrive it back always log back in the same device or a diffrent one.
+All a user would need to do to run this repo is click on Main.java and run. Note: Before running, please ensure the PostgreSQL driver in the /lib folder is added to your IDE's libraries or classpath. The app will automatically connect to our backend and save user info if you ever want to retrieve it, just log back in on the same device or a different one.

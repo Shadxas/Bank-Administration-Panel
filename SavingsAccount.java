@@ -10,7 +10,7 @@ public class SavingsAccount extends Account {
         this.interestRate = new BigDecimal("0.0300");
     }
 
-    // lets you set a custom rate from the db
+    // lets you set a custom rate from the db 
     public SavingsAccount(int accountId, int ownerId, BigDecimal balance, BigDecimal interestRate) {
         super(accountId, ownerId, balance);
         this.interestRate = (interestRate != null)

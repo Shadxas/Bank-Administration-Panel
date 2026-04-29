@@ -22,7 +22,7 @@ public class User {
         this(userId, fullName, null, password, "GOOD", "USER");
     }
 
-    // ── Getters ──
+    // ── Getters ── 
 
     public int getUserId() {
         return userId;
@@ -32,7 +32,7 @@ public class User {
         return fullName;
     }
 
-    // alias so the old ui code still works
+    // alias so the old ui code still works  
     public String getUsername() {
         return fullName;
     }

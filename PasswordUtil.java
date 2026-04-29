@@ -1,9 +1,9 @@
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.PBEKeySpec;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.security.spec.InvalidKeySpecException;
 import java.util.Base64;
+import javax.crypto.SecretKeyFactory;
+import javax.crypto.spec.PBEKeySpec;
 
 // hashes passwords using pbkdf2 so we dont store plaintext in the db
 public class PasswordUtil {
@@ -47,7 +47,7 @@ public class PasswordUtil {
         return salt;
     }
 
-    // the actual pbkdf2 call
+    // the actual pbkdf2 call  
     private static byte[] pbkdf2(char[] password, byte[] salt) {
         try {
             PBEKeySpec spec = new PBEKeySpec(password, salt, ITERATIONS, KEY_LENGTH);
@@ -58,7 +58,7 @@ public class PasswordUtil {
         }
     }
 
-    // constant time compare so hackers cant use timing to guess the hash
+    // constant time compare so hackers cant use timing to guess the hash  
     private static boolean constantTimeEquals(byte[] a, byte[] b) {
         if (a.length != b.length)
             return false;
